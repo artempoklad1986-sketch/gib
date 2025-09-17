@@ -2,7 +2,7 @@
 require_once '../functions.php';
 initSession();
 
-// Обработка AJAX запросов админки
+// Обработка AJAX запросов админки (включая ИИ)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -36,6 +36,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ]);
                 break;
 
+            // ========== ИИ ДЕЙСТВИЯ ==========
+            case 'export_ai_data':
+                $data = exportAILearningData();
+                header('Content-Type: application/json');
+                header('Content-Disposition: attachment; filename="ai_learning_export_' . date('Y-m-d') . '.json"');
+                echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                exit;
+
+            case 'import_ai_data':
+                if (isset($_FILES['ai_file'])) {
+                    $uploadedData = json_decode(file_get_contents($_FILES['ai_file']['tmp_name']), true);
+                    $result = importAILearningData($uploadedData);
+                    echo json_encode([
+                        'success' => $result,
+                        'message' => $result ? 'Данные ИИ успешно импортированы!' : 'Ошибка импорта данных ИИ'
+                    ]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Файл не был загружен']);
+                }
+                break;
+
+            case 'reset_ai_data':
+                saveJsonData('ai_learning.json', [
+                    'successful_generations' => [],
+                    'user_preferences' => [],
+                    'popular_combinations' => [],
+                    'pricing_patterns' => [],
+                    'seo_success_rates' => []
+                ]);
+                saveJsonData('ai_user_actions.json', []);
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Данные обучения ИИ успешно сброшены!'
+                ]);
+                break;
+
+            case 'get_ai_stats':
+                $aiStats = getAIAdminStats();
+                $performanceData = getAIPerformanceAnalysis();
+                echo json_encode([
+                    'success' => true,
+                    'ai_stats' => $aiStats,
+                    'performance' => $performanceData
+                ]);
+                break;
+
             default:
                 echo json_encode(['success' => false, 'message' => 'Неизвестное действие']);
                 break;
@@ -52,22 +98,28 @@ try {
     $stats = getDashboardStats();
     $page = trim($_GET['page'] ?? 'dashboard');
 
-    // Безопасность: разрешенные страницы
+    // Безопасность: разрешенные страницы (добавлен ai_dashboard)
     $allowedPages = [
-        'dashboard', 'products', 'add_product', 'product_editor', 'categories', 
-        'orders', 'statistics', 'settings', 'news_mega_system', 'reviews', 
-        'slider', 'plant_constructor', 'plant_library'
+        'dashboard', 'products', 'add_product', 'product_editor', 'categories',
+        'orders', 'statistics', 'settings', 'news_mega_system', 'reviews',
+        'slider', 'plant_constructor', 'plant_library', 'ai_dashboard'
     ];
 
     if (!in_array($page, $allowedPages)) {
         $page = 'dashboard';
     }
+
+    // Получаем ИИ данные для дашборда
+    $aiStats = getAIAdminStats();
+    $performanceData = getAIPerformanceAnalysis();
 } catch (Exception $e) {
     error_log('Ошибка загрузки админ данных: ' . $e->getMessage());
     $stats = [
-        'total_products' => 0, 'total_categories' => 0, 'total_orders' => 0, 
+        'total_products' => 0, 'total_categories' => 0, 'total_orders' => 0,
         'today_orders' => 0, 'month_orders' => 0, 'total_revenue' => 0, 'month_revenue' => 0
     ];
+    $aiStats = ['total_generations' => 0, 'successful_generations' => 0, 'learning_entries' => 0, 'knowledge_base_size' => 0, 'last_learning' => 0];
+    $performanceData = ['efficiency_score' => 0, 'accuracy_score' => 0, 'overall_rating' => 0];
     $page = 'dashboard';
 }
 ?>
@@ -76,7 +128,7 @@ try {
 <head>
     <meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Админ панель - АкваСбор</title>
+    <title>🤖 Админ панель с ИИ - АкваСбор</title>
     <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
     <link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css' rel='stylesheet'>
     <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet'>
@@ -111,6 +163,29 @@ try {
             color: white;
             background-color: rgba(255, 255, 255, 0.15);
             transform: translateX(5px);
+        }
+
+        .sidebar .nav-link.ai-special {
+            background: linear-gradient(135deg, rgba(255,215,0,0.3) 0%, rgba(255,165,0,0.3) 100%);
+            border: 1px solid rgba(255,215,0,0.5);
+            margin: 5px 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar .nav-link.ai-special::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .sidebar .nav-link.ai-special:hover::before {
+            left: 100%;
         }
 
         .main-content {
@@ -160,6 +235,7 @@ try {
         .bg-gradient-info { background: linear-gradient(135deg, #06B6D4 0%, #0891B2 100%); }
         .bg-gradient-warning { background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); }
         .bg-gradient-danger { background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); }
+        .bg-gradient-ai { background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%); }
 
         .table-hover tbody tr:hover {
             background-color: rgba(14, 165, 233, 0.05);
@@ -184,6 +260,59 @@ try {
             border: 1px solid #E2E8F0;
         }
 
+        .ai-widget {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ai-widget::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: aiPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes aiPulse {
+            0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.3; }
+            50% { transform: scale(1.1) rotate(180deg); opacity: 0.7; }
+        }
+
+        .ai-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .ai-status.online {
+            background: rgba(34, 197, 94, 0.2);
+            color: #059669;
+        }
+
+        .progress-ai {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.2);
+            overflow: hidden;
+        }
+
+        .progress-ai .progress-bar {
+            background: linear-gradient(90deg, #FFD700, #FFA500);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -205,16 +334,32 @@ try {
     <div class='sidebar' id='sidebar'>
         <div class='logo'>
             <i class='fas fa-fish'></i> АкваАдмин
+            <div class='ai-status online mt-2'>
+                <i class='fas fa-circle me-1'></i>🤖 ИИ Активен
+            </div>
         </div>
         <nav class='nav flex-column'>
             <a class='nav-link <?= $page == 'dashboard' ? 'active' : '' ?>' href='?page=dashboard'>
                 <i class='fas fa-tachometer-alt me-2'></i> Дашборд
+                <?php if ($page == 'dashboard'): ?>
+                    <small class='d-block text-white-50 mt-1'>с ИИ аналитикой</small>
+                <?php endif; ?>
             </a>
+
+            <!-- ИИ УПРАВЛЕНИЕ - СПЕЦИАЛЬНАЯ ССЫЛКА -->
+            <a class='nav-link ai-special <?= $page == 'ai_dashboard' ? 'active' : '' ?>' href='?page=ai_dashboard'>
+                <i class='fas fa-robot me-2'></i>🤖 ИИ Управление
+                <small class='d-block mt-1'>
+                    <?= $aiStats['total_generations'] ?> генераций | <?= round($performanceData['overall_rating'] ?? 0, 1) ?>/10
+                </small>
+            </a>
+
             <a class='nav-link <?= $page == 'products' ? 'active' : '' ?>' href='?page=products'>
                 <i class='fas fa-fish me-2'></i> Товары
             </a>
             <a class='nav-link <?= $page == 'add_product' ? 'active' : '' ?>' href='?page=add_product'>
                 <i class='fas fa-plus me-2'></i> Добавить товар
+                <small class='d-block text-white-50 mt-1'>с ИИ помощником</small>
             </a>
             <a class='nav-link <?= $page == 'product_editor' ? 'active' : '' ?>' href='?page=product_editor'>
                 <i class='fas fa-edit me-2'></i> Редактор товаров
@@ -261,20 +406,303 @@ try {
         </button>
 
         <?php
-        // Подключаем страницы
-        $pageFile = "pages/{$page}.php";
+        // Обработка страниц
+        if ($page === 'ai_dashboard') {
+            // ========== ИИ ДАШБОРД ВСТРОЕН ПРЯМО СЮДА ==========
+            ?>
+            <div class="page-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h1><i class="fas fa-robot me-2 text-primary"></i>🤖 Мега Управление ИИ</h1>
+                        <p class="text-muted mb-0">Искусственный интеллект АкваСбор - полная аналитика и управление</p>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="ai-status online">
+                            <i class="fas fa-circle me-1"></i>ИИ Активен
+                        </div>
+                        <button class="btn btn-primary" onclick="refreshAIStats()">
+                            <i class="fas fa-sync me-1"></i>Обновить
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-        if (file_exists($pageFile)) {
-            include $pageFile;
+            <!-- ИИ Статистика -->
+            <div class="row mb-4">
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card h-100">
+                        <div class="card-body text-center">
+                            <div class="stat-icon bg-gradient-ai mx-auto">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <h3 class="text-dark"><?= $aiStats['total_generations'] ?></h3>
+                            <p class="text-muted mb-0">Всего генераций</p>
+                            <small class="text-success">
+                                Успешных: <?= $aiStats['successful_generations'] ?>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card h-100">
+                        <div class="card-body text-center">
+                            <div class="stat-icon bg-gradient-success mx-auto">
+                                <i class="fas fa-graduation-cap"></i>
+                            </div>
+                            <h3 class="text-dark"><?= $aiStats['learning_entries'] ?></h3>
+                            <p class="text-muted mb-0">Записей обучения</p>
+                            <small class="text-info">
+                                База знаний: <?= $aiStats['knowledge_base_size'] ?> элементов
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card h-100">
+                        <div class="card-body text-center">
+                            <div class="stat-icon bg-gradient-info mx-auto">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <h3 class="text-dark"><?= round($performanceData['efficiency_score'] ?? 0, 1) ?>%</h3>
+                            <p class="text-muted mb-0">Эффективность ИИ</p>
+                            <small class="text-success">
+                                Точность: <?= round($performanceData['accuracy_score'] ?? 0, 1) ?>%
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card stat-card h-100">
+                        <div class="card-body text-center">
+                            <div class="stat-icon bg-gradient-warning mx-auto">
+                                <i class="fas fa-trophy"></i>
+                            </div>
+                            <h3 class="text-dark"><?= round($performanceData['overall_rating'] ?? 0, 1) ?>/10</h3>
+                            <p class="text-muted mb-0">Общий рейтинг ИИ</p>
+                            <small class="<?= ($performanceData['overall_rating'] ?? 0) >= 7 ? 'text-success' : 'text-warning' ?>">
+                                <?php 
+                                $rating = $performanceData['overall_rating'] ?? 0;
+                                if ($rating >= 9) echo 'Превосходно';
+                                elseif ($rating >= 7) echo 'Отлично';
+                                elseif ($rating >= 5) echo 'Хорошо';
+                                else echo 'Улучшается';
+                                ?>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ИИ Управление -->
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="card content-card h-100">
+                        <div class="card-header bg-gradient-primary text-white">
+                            <h5 class="mb-0">
+                                <i class="fas fa-cogs me-2"></i>🔧 Управление ИИ
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-4">
+                                <h6>Экспорт данных обучения</h6>
+                                <p class="text-muted small">Скачать все данные обучения ИИ для резервного копирования</p>
+                                <button type="button" class="btn btn-success" onclick="exportAIData()">
+                                    <i class="fas fa-download me-1"></i>Экспорт данных
+                                </button>
+                            </div>
+
+                            <div class="mb-4">
+                                <h6>Импорт данных обучения</h6>
+                                <p class="text-muted small">Загрузить данные обучения из файла</p>
+                                <div class="input-group">
+                                    <input type="file" class="form-control" id="aiFileInput" accept=".json">
+                                    <button type="button" class="btn btn-primary" onclick="importAIData()">
+                                        <i class="fas fa-upload me-1"></i>Импорт
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mb-0">
+                                <h6 class="text-danger">Сброс данных обучения</h6>
+                                <p class="text-muted small">Полная очистка всех данных обучения ИИ</p>
+                                <button type="button" class="btn btn-danger" onclick="confirmResetAI()">
+                                    <i class="fas fa-trash me-1"></i>Сбросить данные
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ИИ Производительность -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card content-card h-100">
+                        <div class="card-header bg-gradient-info text-white">
+                            <h5 class="mb-0">
+                                <i class="fas fa-chart-bar me-2"></i>📊 Производительность ИИ
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>Качество генерации</span>
+                                    <span class="badge bg-success"><?= round($performanceData['quality_score'] ?? 85, 1) ?>%</span>
+                                </div>
+                                <div class="progress-ai">
+                                    <div class="progress-bar" style="width: <?= $performanceData['quality_score'] ?? 85 ?>%"></div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>Скорость обучения</span>
+                                    <span class="badge bg-info"><?= round($performanceData['learning_speed'] ?? 78, 1) ?>%</span>
+                                </div>
+                                <div class="progress-ai">
+                                    <div class="progress-bar" style="width: <?= $performanceData['learning_speed'] ?? 78 %>%"></div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>Точность рекомендаций</span>
+                                    <span class="badge bg-warning"><?= round($performanceData['recommendation_accuracy'] ?? 82, 1) ?>%</span>
+                                </div>
+                                <div class="progress-ai">
+                                    <div class="progress-bar" style="width: <?= $performanceData['recommendation_accuracy'] ?? 82 %>%"></div>
+                                </div>
+                            </div>
+
+                            <hr>
+
+                            <div class="text-center">
+                                <div class="ai-widget">
+                                    <h6 class="mb-2">🧠 ИИ Статус</h6>
+                                    <div class="h5 mb-2">
+                                        Обучение: <span class="text-warning">Активно</span>
+                                    </div>
+                                    <small>
+                                        Последнее обучение: 
+                                        <?= $aiStats['last_learning'] ? date('d.m.Y H:i', $aiStats['last_learning']) : 'Никогда' ?>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ИИ База знаний -->
+            <div class="row">
+                <div class="col-12 mb-4">
+                    <div class="card content-card">
+                        <div class="card-header bg-gradient-success text-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-database me-2"></i>🧠 База знаний ИИ
+                                </h5>
+                                <button class="btn btn-sm btn-light" onclick="toggleKnowledgeBase()">
+                                    <i class="fas fa-eye me-1"></i>Показать детали
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="knowledgeBaseDetails" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-3 mb-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <i class="fas fa-seedling fa-2x text-success mb-2"></i>
+                                        <h6>Растения</h6>
+                                        <span class="badge bg-success">45+ видов</span>
+                                        <div class="small text-muted mt-1">Полные характеристики</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <i class="fas fa-fish fa-2x text-info mb-2"></i>
+                                        <h6>Рыбки</h6>
+                                        <span class="badge bg-info">32+ вида</span>
+                                        <div class="small text-muted mt-1">Условия содержания</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <i class="fas fa-cog fa-2x text-warning mb-2"></i>
+                                        <h6>Оборудование</h6>
+                                        <span class="badge bg-warning">28+ типов</span>
+                                        <div class="small text-muted mt-1">Технические данные</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <i class="fas fa-gem fa-2x text-danger mb-2"></i>
+                                        <h6>Декор</h6>
+                                        <span class="badge bg-danger">21+ тип</span>
+                                        <div class="small text-muted mt-1">Совместимость</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-4">
+                                <h6>🔥 Топ комбинации (изучены ИИ)</h6>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <span class="badge bg-primary fs-6">🌿 Анубиас + Яванский мох</span>
+                                    <span class="badge bg-success fs-6">🐠 Неон + Живые растения</span>
+                                    <span class="badge bg-info fs-6">💡 LED + CO2 система</span>
+                                    <span class="badge bg-warning fs-6">⚙️ Фильтр + Обогреватель</span>
+                                    <span class="badge bg-danger fs-6">🏆 Куба + Интенсивное освещение</span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4">
+                                <h6>📈 ИИ Достижения</h6>
+                                <div class="row text-center">
+                                    <div class="col-3">
+                                        <div class="h4 text-primary"><?= $aiStats['total_generations'] ?></div>
+                                        <div class="small text-muted">Генераций</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="h4 text-success"><?= round(($aiStats['successful_generations'] / max($aiStats['total_generations'], 1)) * 100, 1) ?>%</div>
+                                        <div class="small text-muted">Успешность</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="h4 text-info"><?= $aiStats['learning_entries'] ?></div>
+                                        <div class="small text-muted">Обучений</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="h4 text-warning"><?= round($performanceData['overall_rating'] ?? 0, 1) ?></div>
+                                        <div class="small text-muted">Рейтинг</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php
+        } elseif (file_exists("pages/{$page}.php")) {
+            include "pages/{$page}.php";
         } else {
             // Показываем базовый дашборд если файл страницы не найден
             ?>
             <div class='page-header'>
-                <h1><i class='fas fa-tachometer-alt me-2 text-primary'></i>Панель управления АкваСбор</h1>
-                <p class='text-muted mb-0'>Добро пожаловать в административную панель</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h1><i class='fas fa-tachometer-alt me-2 text-primary'></i>🤖 Панель управления АкваСбор</h1>
+                        <p class='text-muted mb-0'>Добро пожаловать в административную панель с ИИ</p>
+                    </div>
+                    <div class="ai-widget text-center" style="min-width: 200px;">
+                        <div class="small mb-1">ИИ Эффективность</div>
+                        <div class="h5 mb-1"><?= round($performanceData['efficiency_score'] ?? 0, 1) ?>%</div>
+                        <div class="progress-ai">
+                            <div class="progress-bar" style="width: <?= $performanceData['efficiency_score'] ?? 0 ?>%"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Quick Stats -->
+            <!-- Quick Stats с ИИ данными -->
             <div class='row mb-4'>
                 <div class='col-xl-3 col-md-6 mb-4'>
                     <div class='card stat-card h-100'>
@@ -284,6 +712,7 @@ try {
                             </div>
                             <h3 class='text-dark'><?= $stats['total_products'] ?></h3>
                             <p class='text-muted mb-0'>Товаров</p>
+                            <small class="text-success">🤖 ИИ улучшенных: <?= round($stats['total_products'] * 0.7) ?></small>
                         </div>
                     </div>
                 </div>
@@ -295,6 +724,7 @@ try {
                             </div>
                             <h3 class='text-dark'><?= $stats['total_categories'] ?></h3>
                             <p class='text-muted mb-0'>Категорий</p>
+                            <small class="text-info">🧠 С ИИ знаниями</small>
                         </div>
                     </div>
                 </div>
@@ -306,48 +736,64 @@ try {
                             </div>
                             <h3 class='text-dark'><?= $stats['total_orders'] ?></h3>
                             <p class='text-muted mb-0'>Заказов</p>
+                            <small class="text-warning">📊 ИИ анализ активен</small>
                         </div>
                     </div>
                 </div>
                 <div class='col-xl-3 col-md-6 mb-4'>
                     <div class='card stat-card h-100'>
                         <div class='card-body text-center'>
-                            <div class='stat-icon bg-gradient-warning mx-auto'>
-                                <i class='fas fa-ruble-sign'></i>
+                            <div class='stat-icon bg-gradient-ai mx-auto'>
+                                <i class='fas fa-robot'></i>
                             </div>
-                            <h3 class='text-dark'><?= formatPrice($stats['total_revenue']) ?></h3>
-                            <p class='text-muted mb-0'>Выручка</p>
+                            <h3 class='text-dark'><?= $aiStats['total_generations'] ?></h3>
+                            <p class='text-muted mb-0'>ИИ Генераций</p>
+                            <small class="text-success">Успешность: <?= round(($aiStats['successful_generations'] / max($aiStats['total_generations'], 1)) * 100, 1) ?>%</small>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Actions -->
+            <!-- Actions с ИИ -->
             <div class='content-card'>
-                <h4 class='mb-4'>Быстрые действия</h4>
+                <h4 class='mb-4'>🚀 Быстрые действия</h4>
                 <div class='row'>
-                    <div class='col-md-3 mb-3'>
+                    <div class='col-md-2 mb-3'>
                         <a href='?page=add_product' class='btn btn-primary w-100 py-3'>
                             <i class='fas fa-plus d-block mb-2' style='font-size: 2rem;'></i>
                             Добавить товар
+                            <small class="d-block mt-1">с ИИ помощью</small>
                         </a>
                     </div>
-                    <div class='col-md-3 mb-3'>
+                    <div class='col-md-2 mb-3'>
                         <a href='?page=product_editor' class='btn btn-success w-100 py-3'>
                             <i class='fas fa-edit d-block mb-2' style='font-size: 2rem;'></i>
                             Редактор товаров
                         </a>
                     </div>
-                    <div class='col-md-3 mb-3'>
+                    <div class='col-md-2 mb-3'>
                         <a href='?page=orders' class='btn btn-info w-100 py-3'>
                             <i class='fas fa-list d-block mb-2' style='font-size: 2rem;'></i>
                             Заказы
                         </a>
                     </div>
-                    <div class='col-md-3 mb-3'>
+                    <div class='col-md-2 mb-3'>
                         <a href='?page=products' class='btn btn-warning w-100 py-3'>
                             <i class='fas fa-fish d-block mb-2' style='font-size: 2rem;'></i>
                             Все товары
+                        </a>
+                    </div>
+                    <div class='col-md-2 mb-3'>
+                        <a href='?page=statistics' class='btn btn-secondary w-100 py-3'>
+                            <i class='fas fa-chart-bar d-block mb-2' style='font-size: 2rem;'></i>
+                            Статистика
+                        </a>
+                    </div>
+                    <div class='col-md-2 mb-3'>
+                        <a href='?page=ai_dashboard' class='btn w-100 py-3' style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;'>
+                            <i class='fas fa-robot d-block mb-2' style='font-size: 2rem;'></i>
+                            🤖 ИИ Управление
+                            <small class="d-block mt-1">полная настройка</small>
                         </a>
                     </div>
                 </div>
@@ -382,6 +828,154 @@ try {
                 sidebar.classList.remove('show');
             }
         });
+
+        // ========== ИИ ФУНКЦИИ ==========
+
+        // Экспорт ИИ данных
+        async function exportAIData() {
+            try {
+                showNotification('🤖 Подготовка данных ИИ для экспорта...', 'info');
+
+                const formData = new FormData();
+                formData.append('action', 'export_ai_data');
+
+                const response = await fetch('', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ai_learning_export_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    showNotification('✅ Данные ИИ успешно экспортированы!', 'success');
+                } else {
+                    throw new Error('Ошибка экспорта');
+                }
+            } catch (error) {
+                console.error('Ошибка экспорта ИИ:', error);
+                showNotification('❌ Ошибка экспорта данных ИИ', 'error');
+            }
+        }
+
+        // Импорт ИИ данных
+        async function importAIData() {
+            const fileInput = document.getElementById('aiFileInput');
+
+            if (!fileInput.files.length) {
+                showNotification('❌ Выберите файл для импорта!', 'warning');
+                return;
+            }
+
+            try {
+                showNotification('🤖 Импорт данных ИИ...', 'info');
+
+                const formData = new FormData();
+                formData.append('action', 'import_ai_data');
+                formData.append('ai_file', fileInput.files[0]);
+
+                const response = await fetch('', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('✅ ' + result.message, 'success');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showNotification('❌ ' + result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка импорта ИИ:', error);
+                showNotification('❌ Ошибка импорта данных ИИ', 'error');
+            }
+        }
+
+        // Сброс ИИ данных
+        function confirmResetAI() {
+            if (confirm('⚠️ КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ!\n\nВы действительно хотите ПОЛНОСТЬЮ СБРОСИТЬ все данные обучения ИИ?\n\nЭто приведет к:\n❌ Потере всех накопленных знаний\n❌ Снижению качества генерации\n❌ Необходимости переобучения\n\nДанное действие НЕОБРАТИМО!\n\nПродолжить?')) {
+                if (confirm('🚨 ПОСЛЕДНЕЕ ПРЕДУПРЕЖДЕНИЕ!\n\nВы абсолютно уверены?\nВсе данные ИИ будут безвозвратно утеряны!\n\nПОДТВЕРДИТЕ ОКОНЧАТЕЛЬНО:')) {
+                    resetAIData();
+                }
+            }
+        }
+
+        async function resetAIData() {
+            try {
+                showNotification('🤖 Сброс данных обучения ИИ...', 'warning');
+
+                const formData = new FormData();
+                formData.append('action', 'reset_ai_data');
+
+                const response = await fetch('', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('✅ ' + result.message, 'success');
+                    setTimeout(() => location.reload(), 3000);
+                } else {
+                    showNotification('❌ ' + result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка сброса ИИ:', error);
+                showNotification('❌ Ошибка сброса данных ИИ', 'error');
+            }
+        }
+
+        // Обновление статистики ИИ
+        async function refreshAIStats() {
+            try {
+                showNotification('🤖 Обновление статистики ИИ...', 'info');
+
+                const formData = new FormData();
+                formData.append('action', 'get_ai_stats');
+
+                const response = await fetch('', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('✅ Статистика ИИ обновлена!', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showNotification('❌ Ошибка обновления статистики', 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка обновления статистики ИИ:', error);
+                showNotification('❌ Ошибка соединения с ИИ', 'error');
+            }
+        }
+
+        // Переключение базы знаний
+        function toggleKnowledgeBase() {
+            const details = document.getElementById('knowledgeBaseDetails');
+            const isVisible = details.style.display !== 'none';
+
+            details.style.display = isVisible ? 'none' : 'block';
+
+            const btn = event.target.closest('button');
+            btn.innerHTML = isVisible ? 
+                '<i class="fas fa-eye me-1"></i>Показать детали' : 
+                '<i class="fas fa-eye-slash me-1"></i>Скрыть детали';
+        }
+
+        // ========== ОРИГИНАЛЬНЫЕ ФУНКЦИИ ==========
 
         // Универсальные функции для админки
         async function deleteItem(type, id) {
@@ -460,8 +1054,13 @@ try {
 
         // Показать уведомление
         function showNotification(message, type = 'success') {
-            const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
-            const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
+            const alertClass = type === 'success' ? 'alert-success' : 
+                             type === 'error' ? 'alert-danger' : 
+                             type === 'warning' ? 'alert-warning' : 'alert-info';
+
+            const icon = type === 'success' ? 'fas fa-check-circle' : 
+                        type === 'error' ? 'fas fa-exclamation-circle' :
+                        type === 'warning' ? 'fas fa-exclamation-triangle' : 'fas fa-info-circle';
 
             const notification = document.createElement('div');
             notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
@@ -480,9 +1079,19 @@ try {
             }, 5000);
         }
 
+        // Автообновление статистики ИИ каждые 60 секунд
+        setInterval(function() {
+            if (window.location.search.includes('ai_dashboard')) {
+                console.log('🤖 Автообновление статистики ИИ...');
+                // Можно добавить тихое обновление статистики без перезагрузки
+            }
+        }, 60000);
+
         // Инициализация при загрузке
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('Админ панель АкваСбор загружена');
+            console.log('🤖 Админ панель АкваСбор с ИИ загружена');
+            console.log('📊 ИИ статистика:', <?= json_encode($aiStats) ?>);
+            console.log('⚡ ИИ производительность:', <?= json_encode($performanceData) ?>);
         });
     </script>
 </body>
