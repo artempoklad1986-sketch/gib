@@ -1,535 +1,1533 @@
 <?php
-// Не подключаем functions.php повторно, он уже подключен в admin/index.php
+session_start();
+require_once 'functions.php';
 
-// Обработка AJAX запросов для отзывов
+error_log('=== МЕГА INDEX.PHP ЗАГРУЖЕН ===');
+
+// ========== МЕГА AJAX ОБРАБОТЧИКИ ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json; charset=utf-8');
 
     try {
         switch ($_POST['action']) {
-            case 'save_review':
+            // 🛒 МЕГА КОРЗИНА
+            case 'mega_add_to_cart':
+                $productId = $_POST['product_id'] ?? '';
+                $quantity = (int)($_POST['quantity'] ?? 1);
+
+                error_log("🛒 МЕГАКОРЗИНА: Добавление товара ID: {$productId}, количество: {$quantity}");
+
+                if (!empty($productId) && $quantity > 0) {
+                    $result = addToCart($productId, $quantity);
+
+                    if ($result) {
+                        $cartCount = getCartCount();
+                        $cartTotal = getCartTotal();
+                        error_log("✅ МЕГАКОРЗИНА: Товар добавлен, счетчик: {$cartCount}");
+
+                        echo json_encode([
+                            'success' => true,
+                            'cartCount' => $cartCount,
+                            'cartTotal' => $cartTotal,
+                            'message' => '🛒 Товар добавлен в мегакорзину!'
+                        ]);
+                    } else {
+                        echo json_encode([
+                            'success' => false,
+                            'message' => '❌ Не удалось добавить товар в мегакорзину'
+                        ]);
+                    }
+                } else {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => '❌ Некорректные параметры товара'
+                    ]);
+                }
+                break;
+
+            case 'mega_get_cart_content':
+                $cartData = getCartItems();
+                ob_start();
+                if (empty($cartData['items'])): ?>
+                    <div class='mega-empty-cart text-center py-5'>
+                        <div class='mega-cart-icon mb-4'>
+                            <i class='fas fa-shopping-cart fa-5x text-muted opacity-25'></i>
+                        </div>
+                        <h3 class='mb-3'>🛒 Мегакорзина пуста</h3>
+                        <p class='text-muted mb-4'>Добавьте товары в мегакорзину для оформления заказа</p>
+                        <button class='btn btn-primary btn-lg' data-bs-dismiss='modal'>
+                            <i class='fas fa-shopping-bag me-2'></i>🛍️ Начать покупки
+                        </button>
+                    </div>
+                <?php else: ?>
+                    <div class='mega-cart-items'>
+                        <div class='mega-cart-header mb-3'>
+                            <h5 class='mb-0'>🛒 Товары в мегакорзине</h5>
+                            <small class='text-muted'><?= count($cartData['items']) ?> товаров на сумму <?= formatPrice($cartData['total']) ?></small>
+                        </div>
+
+                        <?php foreach ($cartData['items'] as $item): ?>
+                            <div class='mega-cart-item' data-product-id='<?= $item['id'] ?>'>
+                                <div class='mega-item-image'>
+                                    <div class='mega-product-placeholder'>
+                                        <i class='fas fa-fish text-primary fs-4'></i>
+                                    </div>
+                                </div>
+
+                                <div class='mega-item-info'>
+                                    <h6 class='mega-item-name'><?= htmlspecialchars($item['name']) ?></h6>
+                                    <div class='mega-item-price'>💰 <?= formatPrice($item['price']) ?></div>
+                                    <div class='mega-item-category text-muted small'>
+                                        <?php 
+                                        $category = getCategoryById($item['category_id'] ?? 0);
+                                        echo $category ? htmlspecialchars($category['name']) : 'Без категории';
+                                        ?>
+                                    </div>
+                                </div>
+
+                                <div class='mega-item-controls'>
+                                    <div class='mega-quantity-controls'>
+                                        <button class='mega-qty-btn mega-qty-minus' 
+                                                onclick='megaUpdateQuantity("<?= $item['id'] ?>", <?= $item['quantity'] - 1 ?>)'
+                                                <?= $item['quantity'] <= 1 ? 'disabled' : '' ?>>
+                                            <i class='fas fa-minus'></i>
+                                        </button>
+                                        <span class='mega-quantity'><?= $item['quantity'] ?></span>
+                                        <button class='mega-qty-btn mega-qty-plus' 
+                                                onclick='megaUpdateQuantity("<?= $item['id'] ?>", <?= $item['quantity'] + 1 ?>)'>
+                                            <i class='fas fa-plus'></i>
+                                        </button>
+                                    </div>
+
+                                    <div class='mega-item-subtotal'>
+                                        <div class='mega-subtotal-amount'>💸 <?= formatPrice($item['subtotal']) ?></div>
+                                    </div>
+
+                                    <button class='mega-remove-btn' 
+                                            onclick='megaRemoveItem("<?= $item['id'] ?>")'
+                                            title='Удалить из мегакорзины'>
+                                        <i class='fas fa-trash-alt'></i>
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+
+                        <div class='mega-cart-summary'>
+                            <div class='mega-summary-content'>
+                                <div class='mega-summary-row'>
+                                    <span>📦 Товаров:</span>
+                                    <span><?= count($cartData['items']) ?> шт.</span>
+                                </div>
+                                <div class='mega-summary-row'>
+                                    <span>📊 Общий вес:</span>
+                                    <span><?= number_format(count($cartData['items']) * 0.5, 1) ?> кг</span>
+                                </div>
+                                <div class='mega-summary-row'>
+                                    <span>🚚 Доставка:</span>
+                                    <span class='text-success'>БЕСПЛАТНО</span>
+                                </div>
+                                <hr class='mega-separator'>
+                                <div class='mega-summary-total'>
+                                    <h4 class='mb-0'>💰 ИТОГО: <span class='text-success'><?= formatPrice($cartData['total']) ?></span></h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif;
+                $content = ob_get_clean();
+                echo json_encode([
+                    'success' => true, 
+                    'content' => $content, 
+                    'total' => $cartData['total'],
+                    'count' => count($cartData['items'])
+                ]);
+                break;
+
+            case 'mega_update_quantity':
+                $productId = $_POST['product_id'] ?? '';
+                $quantity = (int)($_POST['quantity'] ?? 0);
+
+                error_log("🛒 МЕГАКОРЗИНА: Обновление количества товара {$productId} на {$quantity}");
+
+                $result = updateCartItem($productId, $quantity);
+                $cartData = getCartItems();
+
+                echo json_encode([
+                    'success' => $result,
+                    'cartCount' => getCartCount(),
+                    'cartTotal' => $cartData['total'],
+                    'message' => $result ? '✅ Мегакорзина обновлена' : '❌ Ошибка обновления'
+                ]);
+                break;
+
+            case 'mega_remove_item':
+                $productId = $_POST['product_id'] ?? '';
+
+                error_log("🛒 МЕГАКОРЗИНА: Удаление товара {$productId}");
+
+                $result = removeFromCart($productId);
+                $cartData = getCartItems();
+
+                echo json_encode([
+                    'success' => $result,
+                    'cartCount' => getCartCount(),
+                    'cartTotal' => $cartData['total'],
+                    'message' => $result ? '🗑️ Товар удален из мегакорзины' : '❌ Ошибка удаления'
+                ]);
+                break;
+
+            // ❤️ МЕГА ИЗБРАННОЕ
+            case 'mega_add_to_favorites':
+                $productId = $_POST['product_id'] ?? '';
+                if (!empty($productId)) {
+                    $result = addToFavorites($productId);
+                    echo json_encode([
+                        'success' => $result,
+                        'message' => $result ? '❤️ Товар добавлен в мегаизбранное' : '💔 Товар уже в избранном',
+                        'favoritesCount' => getFavoritesCount()
+                    ]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => '❌ Некорректный ID товара']);
+                }
+                break;
+
+            case 'mega_remove_from_favorites':
+                $productId = $_POST['product_id'] ?? '';
+                if (!empty($productId)) {
+                    $result = removeFromFavorites($productId);
+                    echo json_encode([
+                        'success' => $result,
+                        'message' => $result ? '💔 Товар удален из мегаизбранного' : '❌ Ошибка удаления',
+                        'favoritesCount' => getFavoritesCount()
+                    ]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => '❌ Некорректный ID товара']);
+                }
+                break;
+
+            case 'mega_get_favorites_content':
+                $favorites = getFavoritesItems();
+                ob_start();
+                if (empty($favorites)): ?>
+                    <div class='mega-empty-favorites text-center py-5'>
+                        <div class='mega-favorites-icon mb-4'>
+                            <i class='fas fa-heart fa-5x text-muted opacity-25'></i>
+                        </div>
+                        <h3 class='mb-3'>❤️ Мегаизбранное пусто</h3>
+                        <p class='text-muted mb-4'>Добавляйте товары в мегаизбранное, чтобы не потерять их</p>
+                        <button class='btn btn-warning btn-lg' data-bs-dismiss='modal'>
+                            <i class='fas fa-heart me-2'></i>💛 Найти любимые товары
+                        </button>
+                    </div>
+                <?php else: ?>
+                    <div class='mega-favorites-items'>
+                        <div class='mega-favorites-header mb-3'>
+                            <h5 class='mb-0'>❤️ Мегаизбранное</h5>
+                            <small class='text-muted'><?= count($favorites) ?> любимых товаров</small>
+                        </div>
+
+                        <?php foreach ($favorites as $item): ?>
+                            <div class='mega-favorites-item'>
+                                <div class='mega-item-image'>
+                                    <div class='mega-product-placeholder'>
+                                        <i class='fas fa-fish text-warning fs-4'></i>
+                                    </div>
+                                </div>
+
+                                <div class='mega-item-info'>
+                                    <h6 class='mega-item-name'><?= htmlspecialchars($item['name']) ?></h6>
+                                    <div class='mega-item-price text-success fw-bold'>💰 <?= formatPrice($item['price']) ?></div>
+                                    <div class='mega-item-description text-muted small'>
+                                        <?= htmlspecialchars(mb_substr($item['description'] ?? '', 0, 60)) ?>...
+                                    </div>
+                                    <?php
+                                    $rating = getProductRating($item['id']);
+                                    if ($rating['count'] > 0):
+                                    ?>
+                                        <div class='mega-item-rating'>
+                                            <?php for ($i = 1; $i <= 5; $i++): ?>
+                                                <i class='fas fa-star <?= $i <= $rating['average'] ? 'text-warning' : 'text-muted' ?>'></i>
+                                            <?php endfor; ?>
+                                            <small class='text-muted ms-1'>(<?= $rating['count'] ?>)</small>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class='mega-item-actions'>
+                                    <button class='btn btn-success btn-sm mb-2' 
+                                            onclick='megaAddToCartFromFavorites("<?= $item['id'] ?>")'>
+                                        <i class='fas fa-cart-plus me-1'></i>🛒 В корзину
+                                    </button>
+                                    <button class='btn btn-outline-primary btn-sm mb-2' 
+                                            onclick='showProductModal("<?= $item['id'] ?>")'>
+                                        <i class='fas fa-eye me-1'></i>👁️ Просмотр
+                                    </button>
+                                    <button class='btn btn-outline-danger btn-sm' 
+                                            onclick='megaRemoveFromFavorites("<?= $item['id'] ?>")'>
+                                        <i class='fas fa-heart-broken me-1'></i>💔 Удалить
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif;
+                $content = ob_get_clean();
+                echo json_encode(['success' => true, 'content' => $content, 'count' => count($favorites)]);
+                break;
+
+            // 🌟 МЕГА ОТЗЫВЫ
+            case 'mega_submit_review':
                 $reviewData = [
-                    'id' => $_POST['id'] ?? generateUniqueId(),
-                    'product_id' => (int)($_POST['product_id'] ?? 0),
+                    'id' => generateUniqueId(),
+                    'product_id' => $_POST['product_id'] ?? '',
                     'customer_name' => trim($_POST['customer_name'] ?? ''),
                     'customer_email' => trim($_POST['customer_email'] ?? ''),
                     'rating' => (int)($_POST['rating'] ?? 0),
                     'title' => trim($_POST['title'] ?? ''),
                     'comment' => trim($_POST['comment'] ?? ''),
-                    'status' => $_POST['status'] ?? 'pending',
-                    'created_at' => $_POST['created_at'] ?? date('Y-m-d H:i:s'),
-                    'updated_at' => date('Y-m-d H:i:s')
+                    'status' => 'pending',
+                    'created_at' => date('Y-m-d H:i:s')
                 ];
 
-                $result = saveReview($reviewData);
-                echo json_encode($result);
-                break;
-
-            case 'update_review_status':
-                $id = $_POST['id'] ?? '';
-                $status = $_POST['status'] ?? 'pending';
-                $result = updateReviewStatus($id, $status);
-                echo json_encode([
-                    'success' => $result,
-                    'message' => $result ? 'Статус отзыва обновлен' : 'Ошибка обновления статуса'
-                ]);
-                break;
-
-            case 'delete_review':
-                $id = $_POST['id'] ?? '';
-                $result = deleteReview($id);
-                echo json_encode([
-                    'success' => $result,
-                    'message' => $result ? 'Отзыв удален' : 'Ошибка удаления отзыва'
-                ]);
-                break;
-
-            case 'get_review':
-                $id = $_POST['id'] ?? '';
-                $review = getReviewById($id);
-                if ($review) {
-                    echo json_encode(['success' => true, 'review' => $review]);
+                if ($reviewData['product_id'] && $reviewData['customer_name'] && $reviewData['comment'] && $reviewData['rating']) {
+                    $result = saveReview($reviewData);
+                    echo json_encode([
+                        'success' => $result['success'],
+                        'message' => $result['success'] ? '🌟 Мегаотзыв отправлен на модерацию!' : $result['message']
+                    ]);
                 } else {
-                    echo json_encode(['success' => false, 'message' => 'Отзыв не найден']);
+                    echo json_encode(['success' => false, 'message' => '❌ Заполните все обязательные поля']);
                 }
                 break;
         }
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'Ошибка сервера: ' . $e->getMessage()]);
+        error_log('💥 МЕГА ОШИБКА AJAX: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => '💥 Мегаошибка сервера: ' . $e->getMessage()]);
     }
     exit;
 }
 
-// Получение данных для отображения
-$reviews = getAllReviews();
-$products = getAllProducts();
-$stats = getReviewsStats();
-
-// Функция для получения статистики отзывов
-function getReviewsStats() {
-    $reviews = getAllReviews();
-    $total = count($reviews);
-    $pending = count(array_filter($reviews, fn($r) => ($r['status'] ?? 'pending') === 'pending'));
-    $approved = count(array_filter($reviews, fn($r) => ($r['status'] ?? 'pending') === 'approved'));
-    $rejected = count(array_filter($reviews, fn($r) => ($r['status'] ?? 'pending') === 'rejected'));
-
-    $avgRating = 0;
-    if ($approved > 0) {
-        $approvedReviews = array_filter($reviews, fn($r) => ($r['status'] ?? 'pending') === 'approved');
-        $ratings = array_filter(array_column($approvedReviews, 'rating'), fn($r) => is_numeric($r) && $r > 0);
-        if (!empty($ratings)) {
-            $avgRating = array_sum($ratings) / count($ratings);
-        }
+// Получение товара
+if (isset($_GET['action'])) {
+    switch ($_GET['action']) {
+        case 'get_product':
+            header('Content-Type: application/json; charset=utf-8');
+            $id = $_GET['id'] ?? '';
+            $product = getProductById($id);
+            if ($product) {
+                $reviews = getProductReviews($id);
+                $product['reviews'] = $reviews;
+                echo json_encode($product);
+            } else {
+                echo json_encode(['error' => 'Товар не найден']);
+            }
+            exit;
     }
+}
 
-    return [
-        'total' => $total,
-        'pending' => $pending,
-        'approved' => $approved,
-        'rejected' => $rejected,
-        'avg_rating' => round($avgRating, 1)
-    ];
+try {
+    $featuredProducts = getFeaturedProducts(12);
+    $categories = getCategoriesWithCount();
+    $cartCount = getCartCount();
+    $favoritesCount = getFavoritesCount();
+} catch (Exception $e) {
+    error_log('Ошибка загрузки данных: ' . $e->getMessage());
+    $featuredProducts = [];
+    $categories = [];
+    $cartCount = 0;
+    $favoritesCount = 0;
 }
 ?>
+<!DOCTYPE html>
+<html lang='ru'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>🐠 АкваСбор - Мегамагазин аквариумов</title>
 
-<div class='page-header'>
-    <div class='d-flex justify-content-between align-items-center'>
-        <div>
-            <h1><i class='fas fa-star me-2 text-warning'></i>Управление отзывами</h1>
-            <p class='text-muted mb-0'>Модерация и управление отзывами покупателей</p>
-        </div>
-        <button class='btn btn-primary' onclick='showReviewModal()'>
-            <i class='fas fa-plus me-2'></i>Добавить отзыв
-        </button>
-    </div>
-</div>
+    <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+    <link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css' rel='stylesheet'>
+    <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>
 
-<!-- Статистика отзывов -->
-<div class='row mb-4'>
-    <div class='col-md-3'>
-        <div class='card stat-card h-100'>
-            <div class='card-body text-center'>
-                <div class='stat-icon bg-gradient-primary mx-auto'>
-                    <i class='fas fa-comment-dots'></i>
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); color: #334155; }
+
+        /* МЕГА HEADER */
+        .mega-header { 
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); 
+            border-bottom: 2px solid #0EA5E9; 
+            box-shadow: 0 4px 20px rgba(14,165,233,0.15); 
+            position: sticky; 
+            top: 0; 
+            z-index: 1000; 
+        }
+        .navbar-brand { 
+            font-weight: 800; 
+            font-size: 1.8rem; 
+            background: linear-gradient(135deg, #0EA5E9, #10B981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* МЕГА КНОПКИ */
+        .mega-cart-btn, .mega-favorites-btn { 
+            position: relative; 
+            background: linear-gradient(135deg, #0EA5E9, #0284C7); 
+            border: none;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(14,165,233,0.3);
+        }
+        .mega-favorites-btn { 
+            background: linear-gradient(135deg, #F59E0B, #D97706); 
+            box-shadow: 0 4px 15px rgba(245,158,11,0.3);
+        }
+        .mega-cart-btn:hover, .mega-favorites-btn:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 6px 25px rgba(14,165,233,0.4);
+        }
+        .mega-favorites-btn:hover { box-shadow: 0 6px 25px rgba(245,158,11,0.4); }
+
+        /* МЕГА BADGES */
+        .mega-cart-badge, .mega-favorites-badge { 
+            position: absolute; 
+            top: -8px; 
+            right: -8px; 
+            background: linear-gradient(135deg, #EF4444, #DC2626); 
+            color: white; 
+            border-radius: 50%; 
+            width: 24px; 
+            height: 24px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 0.75rem; 
+            font-weight: 700;
+            border: 2px solid white;
+            box-shadow: 0 2px 8px rgba(239,68,68,0.4);
+            animation: pulse 2s infinite;
+        }
+        .mega-favorites-badge { background: linear-gradient(135deg, #F59E0B, #D97706); }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        /* МЕГА КОРЗИНА СТИЛИ */
+        .mega-cart-items {
+            max-height: 70vh;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .mega-cart-header {
+            background: linear-gradient(135deg, #0EA5E9, #10B981);
+            color: white;
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .mega-cart-item {
+            display: flex;
+            align-items: center;
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .mega-cart-item:hover {
+            border-color: #0EA5E9;
+            transform: translateX(5px);
+            box-shadow: 0 4px 20px rgba(14,165,233,0.15);
+        }
+
+        .mega-item-image {
+            margin-right: 1rem;
+        }
+
+        .mega-product-placeholder {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #0EA5E9;
+        }
+
+        .mega-item-info {
+            flex-grow: 1;
+        }
+
+        .mega-item-name {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .mega-item-price {
+            font-weight: 700;
+            color: #10B981;
+            font-size: 1.1rem;
+        }
+
+        .mega-item-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .mega-quantity-controls {
+            display: flex;
+            align-items: center;
+            background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+            border-radius: 25px;
+            padding: 0.25rem;
+        }
+
+        .mega-qty-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #0EA5E9;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mega-qty-btn:hover:not(:disabled) {
+            background: #0284C7;
+            transform: scale(1.1);
+        }
+
+        .mega-qty-btn:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+        }
+
+        .mega-quantity {
+            min-width: 40px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #1e293b;
+        }
+
+        .mega-item-subtotal {
+            text-align: right;
+        }
+
+        .mega-subtotal-amount {
+            font-weight: 700;
+            color: #059669;
+            font-size: 1.2rem;
+        }
+
+        .mega-remove-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: linear-gradient(135deg, #EF4444, #DC2626);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mega-remove-btn:hover {
+            background: linear-gradient(135deg, #DC2626, #B91C1C);
+            transform: scale(1.1);
+        }
+
+        .mega-cart-summary {
+            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            border: 2px solid #10B981;
+        }
+
+        .mega-summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .mega-separator {
+            border: none;
+            height: 2px;
+            background: linear-gradient(135deg, #0EA5E9, #10B981);
+            margin: 1rem 0;
+        }
+
+        .mega-summary-total {
+            text-align: center;
+            padding: 1rem;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: white;
+            border-radius: 12px;
+            margin-top: 1rem;
+        }
+
+        /* МЕГА ИЗБРАННОЕ СТИЛИ */
+        .mega-favorites-items {
+            max-height: 70vh;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .mega-favorites-header {
+            background: linear-gradient(135deg, #F59E0B, #D97706);
+            color: white;
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .mega-favorites-item {
+            display: flex;
+            align-items: flex-start;
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .mega-favorites-item:hover {
+            border-color: #F59E0B;
+            transform: translateX(5px);
+            box-shadow: 0 4px 20px rgba(245,158,11,0.15);
+        }
+
+        .mega-item-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-left: 1rem;
+        }
+
+        .mega-item-rating {
+            margin-top: 0.5rem;
+        }
+
+        /* ОБЩИЕ СТИЛИ */
+        .hero { 
+            background: linear-gradient(135deg, rgba(14,165,233,0.1) 0%, rgba(16,185,129,0.1) 100%); 
+            padding: 4rem 0; 
+        }
+        .hero h1 { 
+            font-weight: 800; 
+            background: linear-gradient(135deg, #1E293B, #0EA5E9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .product-card { 
+            background: white; 
+            border: 2px solid #E2E8F0; 
+            border-radius: 16px; 
+            overflow: hidden; 
+            transition: all 0.3s ease; 
+            cursor: pointer; 
+            height: 100%; 
+            position: relative; 
+        }
+        .product-card:hover { 
+            transform: translateY(-5px); 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15); 
+            border-color: #0EA5E9; 
+        }
+
+        .toast-container { position: fixed; top: 100px; right: 20px; z-index: 9999; }
+    </style>
+</head>
+<body>
+    <!-- Toast Container -->
+    <div class='toast-container'></div>
+
+    <!-- МЕГА HEADER -->
+    <header class='mega-header'>
+        <nav class='navbar navbar-expand-lg'>
+            <div class='container'>
+                <a class='navbar-brand' href='index.php'>
+                    🐠 АкваСбор
+                </a>
+
+                <button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNav'>
+                    <span class='navbar-toggler-icon'></span>
+                </button>
+
+                <div class='collapse navbar-collapse' id='navbarNav'>
+                    <ul class='navbar-nav me-auto'>
+                        <li class='nav-item'><a class='nav-link fw-medium' href='#products'>🛍️ Товары</a></li>
+                        <li class='nav-item'><a class='nav-link fw-medium' href='#categories'>📂 Категории</a></li>
+                        <li class='nav-item'><a class='nav-link fw-medium' href='#about'>ℹ️ О магазине</a></li>
+                    </ul>
+
+                    <div class='d-flex align-items-center gap-3'>
+                        <button class='btn mega-favorites-btn' onclick='megaShowFavorites()'>
+                            <i class='fas fa-heart me-1'></i>❤️ Избранное
+                            <span class='mega-favorites-badge' id='megaFavoritesCount' style='display: <?= $favoritesCount > 0 ? 'flex' : 'none' ?>'><?= $favoritesCount ?></span>
+                        </button>
+                        <button class='btn mega-cart-btn' data-bs-toggle='modal' data-bs-target='#megaCartModal'>
+                            <i class='fas fa-shopping-cart me-1'></i>🛒 Мегакорзина
+                            <span class='mega-cart-badge' id='megaCartCount' style='display: <?= $cartCount > 0 ? 'flex' : 'none' ?>'><?= $cartCount ?></span>
+                        </button>
+                        <a href='admin/' class='btn btn-outline-primary fw-medium'>
+                            <i class='fas fa-cog me-1'></i>⚙️ Админ
+                        </a>
+                    </div>
                 </div>
-                <h3 class='text-dark'><?= $stats['total'] ?></h3>
-                <p class='text-muted mb-0'>Всего отзывов</p>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class='hero'>
+        <div class='container'>
+            <div class='row align-items-center'>
+                <div class='col-lg-8'>
+                    <h1 class='display-4 mb-4'>🐠 АкваСбор</h1>
+                    <p class='lead'>Мегамагазин аквариумов и их обитателей</p>
+                    <p class='mb-4'>Общение об аквариумах, аквариумных рыбках, растениях и оборудовании. Делитесь фотографиями питомцев, уникальным оформлением и заводите новые аквариумные знакомства!</p>
+                    <div class='d-flex gap-3 mb-4'>
+                        <a href='#products' class='btn btn-primary btn-lg'>
+                            <i class='fas fa-eye me-2'></i>👀 Смотреть товары
+                        </a>
+                        <a href='#categories' class='btn btn-outline-primary btn-lg'>
+                            <i class='fas fa-th-large me-2'></i>📂 Категории
+                        </a>
+                    </div>
+                </div>
+                <div class='col-lg-4'>
+                    <div class='delivery-info bg-white rounded-3 p-4 shadow-lg border-2 border-primary'>
+                        <h5 class='mb-3'>
+                            <i class='fas fa-shipping-fast text-primary me-2'></i>🚚 Доставка
+                        </h5>
+                        <div class='row g-2'>
+                            <div class='col-6'>🇷🇺 Россия</div>
+                            <div class='col-6'>🇧🇾 Беларусь</div>
+                            <div class='col-6'>🇰🇿 Казахстан</div>
+                            <div class='col-6'>🇰🇬 Киргизия</div>
+                            <div class='col-12'>🇦🇲 Армения</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-    <div class='col-md-3'>
-        <div class='card stat-card h-100'>
-            <div class='card-body text-center'>
-                <div class='stat-icon bg-gradient-warning mx-auto'>
-                    <i class='fas fa-clock'></i>
-                </div>
-                <h3 class='text-dark'><?= $stats['pending'] ?></h3>
-                <p class='text-muted mb-0'>На модерации</p>
-            </div>
-        </div>
-    </div>
-    <div class='col-md-3'>
-        <div class='card stat-card h-100'>
-            <div class='card-body text-center'>
-                <div class='stat-icon bg-gradient-success mx-auto'>
-                    <i class='fas fa-check-circle'></i>
-                </div>
-                <h3 class='text-dark'><?= $stats['approved'] ?></h3>
-                <p class='text-muted mb-0'>Одобренных</p>
-            </div>
-        </div>
-    </div>
-    <div class='col-md-3'>
-        <div class='card stat-card h-100'>
-            <div class='card-body text-center'>
-                <div class='stat-icon bg-gradient-info mx-auto'>
-                    <i class='fas fa-star'></i>
-                </div>
-                <h3 class='text-dark'><?= $stats['avg_rating'] ?></h3>
-                <p class='text-muted mb-0'>Средняя оценка</p>
-            </div>
-        </div>
-    </div>
-</div>
+    </section>
 
-<!-- Фильтры -->
-<div class='content-card mb-4'>
-    <div class='row g-3'>
-        <div class='col-md-4'>
-            <label class='form-label'>Фильтр по статусу:</label>
-            <select class='form-select' id='statusFilter' onchange='filterReviews()'>
-                <option value=''>Все отзывы</option>
-                <option value='pending'>На модерации</option>
-                <option value='approved'>Одобренные</option>
-                <option value='rejected'>Отклоненные</option>
-            </select>
-        </div>
-        <div class='col-md-4'>
-            <label class='form-label'>Поиск:</label>
-            <input type='text' class='form-control' id='searchInput' placeholder='Поиск по имени, email, отзыву...' onkeyup='filterReviews()'>
-        </div>
-        <div class='col-md-4'>
-            <label class='form-label'>Рейтинг:</label>
-            <select class='form-select' id='ratingFilter' onchange='filterReviews()'>
-                <option value=''>Любой рейтинг</option>
-                <option value='5'>5 звезд</option>
-                <option value='4'>4 звезды</option>
-                <option value='3'>3 звезды</option>
-                <option value='2'>2 звезды</option>
-                <option value='1'>1 звезда</option>
-            </select>
-        </div>
-    </div>
-</div>
-
-<!-- Список отзывов -->
-<div class='content-card'>
-    <div class='table-responsive'>
-        <table class='table table-hover' id='reviewsTable'>
-            <thead class='table-light'>
-                <tr>
-                    <th>Товар</th>
-                    <th>Покупатель</th>
-                    <th>Рейтинг</th>
-                    <th>Отзыв</th>
-                    <th>Статус</th>
-                    <th>Дата</th>
-                    <th>Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($reviews)): ?>
-                    <tr>
-                        <td colspan='7' class='text-center py-4'>
-                            <i class='fas fa-comment-slash fa-3x text-muted mb-3 d-block'></i>
-                            <h5>Отзывы не найдены</h5>
-                            <p class='text-muted'>Пока нет ни одного отзыва</p>
-                        </td>
-                    </tr>
-                <?php else: ?>
-                    <?php foreach ($reviews as $review): ?>
-                        <?php 
-                        $product = getProductById($review['product_id'] ?? 0);
-                        $productName = $product ? $product['name'] : 'Товар не найден';
-                        ?>
-                        <tr class='review-row' 
-                            data-status='<?= htmlspecialchars($review['status'] ?? 'pending') ?>'
-                            data-rating='<?= $review['rating'] ?? 0 ?>'
-                            data-search='<?= htmlspecialchars(($review['customer_name'] ?? '') . ' ' . ($review['customer_email'] ?? '') . ' ' . ($review['comment'] ?? '')) ?>'>
-                            <td>
-                                <div class='fw-medium'><?= htmlspecialchars($productName) ?></div>
-                                <small class='text-muted'>ID: <?= $review['product_id'] ?? 'N/A' ?></small>
-                            </td>
-                            <td>
-                                <div class='fw-medium'><?= htmlspecialchars($review['customer_name'] ?? 'Аноним') ?></div>
-                                <small class='text-muted'><?= htmlspecialchars($review['customer_email'] ?? '') ?></small>
-                            </td>
-                            <td>
-                                <div class='d-flex'>
-                                    <?php for ($i = 1; $i <= 5; $i++): ?>
-                                        <i class='fas fa-star <?= $i <= ($review['rating'] ?? 0) ? 'text-warning' : 'text-muted' ?>'></i>
-                                    <?php endfor; ?>
+    <!-- Categories Section -->
+    <section id='categories' class='py-5'>
+        <div class='container'>
+            <h2 class='text-center mb-5'>📂 Мегакатегории товаров</h2>
+            <?php if (empty($categories)): ?>
+                <div class='alert alert-info text-center'>
+                    <i class='fas fa-info-circle me-2'></i>Категории не найдены. 
+                    <a href='admin/' class='alert-link'>Добавьте категории в админ панели</a>.
+                </div>
+            <?php else: ?>
+                <div class='row g-4'>
+                    <?php foreach ($categories as $category): ?>
+                        <div class='col-lg-3 col-md-6'>
+                            <div class='category-card bg-white rounded-3 p-4 text-center h-100 shadow-sm border-2 border-transparent hover-border-primary transition-all'>
+                                <div class='category-icon bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3' style='width: 70px; height: 70px; font-size: 1.8rem;'>
+                                    <i class='fas fa-fish'></i>
                                 </div>
-                                <small class='text-muted'><?= $review['rating'] ?? 0 ?>/5</small>
-                            </td>
-                            <td>
-                                <div class='fw-medium'><?= htmlspecialchars($review['title'] ?? '') ?></div>
-                                <div class='text-muted small'><?= htmlspecialchars(mb_substr($review['comment'] ?? '', 0, 50)) ?>...</div>
-                            </td>
-                            <td>
-                                <?php
-                                $statusMap = [
-                                    'pending' => ['warning', 'На модерации'],
-                                    'approved' => ['success', 'Одобрен'],
-                                    'rejected' => ['danger', 'Отклонен']
-                                ];
-                                $status = $review['status'] ?? 'pending';
-                                $statusInfo = $statusMap[$status] ?? ['secondary', 'Неизвестно'];
-                                ?>
-                                <span class='badge bg-<?= $statusInfo[0] ?>'><?= $statusInfo[1] ?></span>
-                            </td>
-                            <td>
-                                <small><?= date('d.m.Y H:i', strtotime($review['created_at'] ?? 'now')) ?></small>
-                            </td>
-                            <td>
-                                <div class='btn-group btn-group-sm'>
-                                    <button class='btn btn-outline-primary btn-action' onclick='editReview("<?= $review['id'] ?>")' title='Редактировать'>
-                                        <i class='fas fa-edit'></i>
-                                    </button>
-                                    <div class='btn-group'>
-                                        <button class='btn btn-outline-success btn-action dropdown-toggle' data-bs-toggle='dropdown' title='Изменить статус'>
-                                            <i class='fas fa-check'></i>
-                                        </button>
-                                        <ul class='dropdown-menu'>
-                                            <li><a class='dropdown-item' onclick='updateStatus("<?= $review['id'] ?>", "approved")'>Одобрить</a></li>
-                                            <li><a class='dropdown-item' onclick='updateStatus("<?= $review['id'] ?>", "pending")'>На модерацию</a></li>
-                                            <li><a class='dropdown-item' onclick='updateStatus("<?= $review['id'] ?>", "rejected")'>Отклонить</a></li>
-                                        </ul>
-                                    </div>
-                                    <button class='btn btn-outline-danger btn-action' onclick='deleteReview("<?= $review['id'] ?>")' title='Удалить'>
-                                        <i class='fas fa-trash'></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
+                                <h6 class='fw-bold'><?= htmlspecialchars($category['name'] ?? 'Без названия') ?></h6>
+                                <p class='text-muted small mb-3'><?= htmlspecialchars(mb_substr($category['description'] ?? '', 0, 50)) ?></p>
+                                <span class='badge bg-primary fs-6'><?= $category['products_count'] ?? 0 ?> товаров</span>
+                            </div>
+                        </div>
                     <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
 
-<!-- Модальное окно редактирования отзыва -->
-<div class='modal fade' id='reviewModal' tabindex='-1'>
-    <div class='modal-dialog modal-lg'>
-        <div class='modal-content'>
-            <div class='modal-header bg-primary text-white'>
-                <h5 class='modal-title' id='reviewModalTitle'>Добавить отзыв</h5>
-                <button type='button' class='btn-close btn-close-white' data-bs-dismiss='modal'></button>
+    <!-- Products Section -->
+    <section id='products' class='py-5 bg-white'>
+        <div class='container'>
+            <div class='d-flex justify-content-between align-items-center mb-5'>
+                <h2 class='mb-0'>🌟 Мегарекомендуемые товары</h2>
+                <a href='products.php' class='btn btn-outline-primary'>
+                    <i class='fas fa-th me-2'></i>📋 Все товары
+                </a>
             </div>
-            <form id='reviewForm'>
-                <div class='modal-body'>
-                    <input type='hidden' id='reviewId' name='id'>
-                    <div class='row'>
-                        <div class='col-md-6'>
-                            <label class='form-label'>Товар *</label>
-                            <select class='form-select' id='productId' name='product_id' required>
-                                <option value=''>Выберите товар</option>
-                                <?php foreach ($products as $product): ?>
-                                    <option value='<?= $product['id'] ?>'><?= htmlspecialchars($product['name'] ?? '') ?></option>
-                                <?php endforeach; ?>
-                            </select>
+
+            <?php if (empty($featuredProducts)): ?>
+                <div class='alert alert-info text-center'>
+                    <i class='fas fa-fish fa-3x mb-3 d-block'></i>
+                    <h4>Товары не найдены</h4>
+                    <p>Пока нет товаров для отображения. <a href='admin/' class='alert-link'>Добавьте товары в админ панели</a>.</p>
+                </div>
+            <?php else: ?>
+                <div class='row g-4'>
+                    <?php foreach ($featuredProducts as $product): ?>
+                        <?php
+                        $category = getCategoryById($product['category_id'] ?? 0);
+                        $categoryName = $category ? $category['name'] : 'Без категории';
+                        $rating = getProductRating($product['id']);
+                        $isFavorite = isInFavorites($product['id']);
+                        $labels = getProductLabels($product['id']);
+                        ?>
+                        <div class='col-xl-3 col-lg-4 col-md-6'>
+                            <div class='product-card' onclick='showProductModal("<?= $product['id'] ?>")'>
+                                <div class='product-image bg-light d-flex align-items-center justify-content-center position-relative' style='height: 220px;'>
+
+                                    <!-- Кнопка избранного -->
+                                    <button class='btn btn-sm position-absolute top-0 start-0 m-2 rounded-circle bg-white shadow-sm <?= $isFavorite ? 'text-warning' : 'text-muted' ?>' 
+                                            onclick='event.stopPropagation(); megaToggleFavorite("<?= $product['id'] ?>", this)'
+                                            title='<?= $isFavorite ? 'Удалить из мегаизбранного' : 'Добавить в мегаизбранное' ?>'
+                                            style='width: 40px; height: 40px;'>
+                                        <i class='fas fa-heart'></i>
+                                    </button>
+
+                                    <!-- Метки товара -->
+                                    <?php if (!empty($labels)): ?>
+                                        <div class='product-labels position-absolute top-0 start-0 mt-5 ms-2'>
+                                            <?php foreach ($labels as $label): ?>
+                                                <span class='badge <?= $label['class'] ?> d-block mb-1 fs-6'><?= htmlspecialchars($label['text']) ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Изображение товара -->
+                                    <i class='fas fa-fish fa-4x text-primary'></i>
+
+                                    <!-- Категория -->
+                                    <div class='position-absolute top-0 end-0 m-2'>
+                                        <span class='badge bg-primary'><?= htmlspecialchars($categoryName) ?></span>
+                                    </div>
+                                </div>
+
+                                <div class='p-3'>
+                                    <h6 class='fw-bold mb-2'><?= htmlspecialchars($product['name'] ?? 'Без названия') ?></h6>
+
+                                    <?php if ($rating['count'] > 0): ?>
+                                        <div class='d-flex align-items-center mb-2'>
+                                            <div class='stars me-2'>
+                                                <?php for ($i = 1; $i <= 5; $i++): ?>
+                                                    <i class='fas fa-star <?= $i <= $rating['average'] ? 'text-warning' : 'text-muted' ?>'></i>
+                                                <?php endfor; ?>
+                                            </div>
+                                            <small class='text-muted'><?= $rating['average'] ?> (<?= $rating['count'] ?>)</small>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <p class='text-muted small mb-3'><?= htmlspecialchars(mb_substr($product['description'] ?? '', 0, 80)) ?>...</p>
+
+                                    <div class='d-flex justify-content-between align-items-center mb-3'>
+                                        <span class='h5 mb-0 text-success fw-bold'>💰 <?= formatPrice($product['price'] ?? 0) ?></span>
+                                    </div>
+
+                                    <div class='d-grid gap-2'>
+                                        <button class='btn btn-success fw-medium' onclick='event.stopPropagation(); megaAddToCart("<?= $product['id'] ?>")'>
+                                            <i class='fas fa-cart-plus me-2'></i>🛒 В мегакорзину
+                                        </button>
+                                        <button class='btn btn-outline-primary btn-sm' onclick='event.stopPropagation(); showProductModal("<?= $product['id'] ?>")'>
+                                            <i class='fas fa-eye me-1'></i>👁️ Подробнее
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class='col-md-6'>
-                            <label class='form-label'>Рейтинг *</label>
-                            <select class='form-select' id='rating' name='rating' required>
-                                <option value=''>Выберите рейтинг</option>
-                                <option value='5'>5 звезд - Отлично</option>
-                                <option value='4'>4 звезды - Хорошо</option>
-                                <option value='3'>3 звезды - Нормально</option>
-                                <option value='2'>2 звезды - Плохо</option>
-                                <option value='1'>1 звезда - Ужасно</option>
-                            </select>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id='about' class='py-5 bg-light'>
+        <div class='container'>
+            <div class='row'>
+                <div class='col-lg-8 mx-auto text-center'>
+                    <h2 class='mb-4'>ℹ️ О нашем мегасообществе</h2>
+                    <p class='lead'>Наша мегагруппа полезна и интересна всем, кто занимается аквариумистикой</p>
+
+                    <div class='row g-4 mt-4'>
+                        <div class='col-md-4'>
+                            <div class='bg-white rounded-3 p-4 h-100 shadow-sm'>
+                                <div class='bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3' style='width: 60px; height: 60px;'>
+                                    <i class='fas fa-camera fa-lg'></i>
+                                </div>
+                                <h6 class='fw-bold'>📸 Фотографии питомцев</h6>
+                                <p class='text-muted small'>Делитесь красивыми снимками ваших рыбок</p>
+                            </div>
                         </div>
-                    </div>
-                    <div class='row mt-3'>
-                        <div class='col-md-6'>
-                            <label class='form-label'>Имя покупателя *</label>
-                            <input type='text' class='form-control' id='customerName' name='customer_name' required>
+                        <div class='col-md-4'>
+                            <div class='bg-white rounded-3 p-4 h-100 shadow-sm'>
+                                <div class='bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3' style='width: 60px; height: 60px;'>
+                                    <i class='fas fa-palette fa-lg'></i>
+                                </div>
+                                <h6 class='fw-bold'>🎨 Уникальное оформление</h6>
+                                <p class='text-muted small'>Креативные решения в дизайне аквариумов</p>
+                            </div>
                         </div>
-                        <div class='col-md-6'>
-                            <label class='form-label'>Email</label>
-                            <input type='email' class='form-control' id='customerEmail' name='customer_email'>
+                        <div class='col-md-4'>
+                            <div class='bg-white rounded-3 p-4 h-100 shadow-sm'>
+                                <div class='bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3' style='width: 60px; height: 60px;'>
+                                    <i class='fas fa-users fa-lg'></i>
+                                </div>
+                                <h6 class='fw-bold'>👥 Аквариумные знакомства</h6>
+                                <p class='text-muted small'>Находите единомышленников</p>
+                            </div>
                         </div>
-                    </div>
-                    <div class='mt-3'>
-                        <label class='form-label'>Заголовок отзыва</label>
-                        <input type='text' class='form-control' id='title' name='title' placeholder='Краткое описание впечатления'>
-                    </div>
-                    <div class='mt-3'>
-                        <label class='form-label'>Текст отзыва *</label>
-                        <textarea class='form-control' id='comment' name='comment' rows='4' required placeholder='Подробный отзыв о товаре'></textarea>
-                    </div>
-                    <div class='mt-3'>
-                        <label class='form-label'>Статус</label>
-                        <select class='form-select' id='status' name='status'>
-                            <option value='pending'>На модерации</option>
-                            <option value='approved'>Одобрен</option>
-                            <option value='rejected'>Отклонен</option>
-                        </select>
                     </div>
                 </div>
-                <div class='modal-footer'>
-                    <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Отмена</button>
-                    <button type='submit' class='btn btn-primary'>
-                        <i class='fas fa-save me-2'></i>Сохранить отзыв
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class='bg-dark text-light py-5'>
+        <div class='container'>
+            <div class='row'>
+                <div class='col-lg-4 mb-4'>
+                    <h6 class='fw-bold mb-3'>🐠 АкваСбор</h6>
+                    <p>Ваш надежный мегапартнер в мире аквариумистики. Качественные товары и профессиональные консультации.</p>
+                </div>
+                <div class='col-lg-2 mb-4'>
+                    <h6 class='fw-bold mb-3'>📋 Каталог</h6>
+                    <div class='d-flex flex-column gap-2'>
+                        <a href='#' class='text-light text-decoration-none'>🏠 Аквариумы</a>
+                        <a href='#' class='text-light text-decoration-none'>🐠 Рыбки</a>
+                        <a href='#' class='text-light text-decoration-none'>🌱 Растения</a>
+                        <a href='#' class='text-light text-decoration-none'>⚙️ Оборудование</a>
+                    </div>
+                </div>
+                <div class='col-lg-2 mb-4'>
+                    <h6 class='fw-bold mb-3'>🏢 Компания</h6>
+                    <div class='d-flex flex-column gap-2'>
+                        <a href='#' class='text-light text-decoration-none'>ℹ️ О нас</a>
+                        <a href='#' class='text-light text-decoration-none'>🚚 Доставка</a>
+                        <a href='#' class='text-light text-decoration-none'>📞 Контакты</a>
+                    </div>
+                </div>
+                <div class='col-lg-4 mb-4'>
+                    <h6 class='fw-bold mb-3'>📞 Контакты</h6>
+                    <p class='mb-2'><i class='fas fa-envelope me-2'></i>📧 info@akvasbor.ru</p>
+                    <p class='mb-2'><i class='fas fa-phone me-2'></i>📱 +7 (999) 123-45-67</p>
+                    <p class='mb-0'><i class='fas fa-map-marker-alt me-2'></i>🌍 Доставка по России и СНГ</p>
+                </div>
+            </div>
+            <hr class='my-4 border-secondary'>
+            <div class='text-center'>
+                <p class='mb-0'>© 2024 🐠 АкваСбор. Все права защищены. Мегамагазин аквариумистики!</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- МЕГА КОРЗИНА MODAL -->
+    <div class='modal fade' id='megaCartModal' tabindex='-1'>
+        <div class='modal-dialog modal-xl'>
+            <div class='modal-content'>
+                <div class='modal-header bg-primary text-white'>
+                    <h4 class='modal-title'>
+                        <i class='fas fa-shopping-cart me-2'></i>🛒 МЕГАКОРЗИНА
+                    </h4>
+                    <button type='button' class='btn-close btn-close-white' data-bs-dismiss='modal'></button>
+                </div>
+                <div class='modal-body p-0' id='megaCartContent' style='min-height: 400px;'>
+                    <div class='d-flex justify-content-center align-items-center h-100'>
+                        <div class='text-center py-5'>
+                            <div class='spinner-border text-primary mb-3' role='status' style='width: 3rem; height: 3rem;'>
+                                <span class='visually-hidden'>Загрузка мегакорзины...</span>
+                            </div>
+                            <h5>🔄 Загружаем мегакорзину...</h5>
+                        </div>
+                    </div>
+                </div>
+                <div class='modal-footer bg-light' id='megaCartFooter'>
+                    <button type='button' class='btn btn-outline-secondary' data-bs-dismiss='modal'>
+                        <i class='fas fa-shopping-bag me-2'></i>🛍️ Продолжить покупки
+                    </button>
+                    <a href='checkout.php' class='btn btn-success btn-lg' id='megaCheckoutBtn' style='display: none;'>
+                        <i class='fas fa-credit-card me-2'></i>💳 Оформить мегазаказ
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МЕГА ИЗБРАННОЕ MODAL -->
+    <div class='modal fade' id='megaFavoritesModal' tabindex='-1'>
+        <div class='modal-dialog modal-xl'>
+            <div class='modal-content'>
+                <div class='modal-header bg-warning text-dark'>
+                    <h4 class='modal-title'>
+                        <i class='fas fa-heart me-2'></i>❤️ МЕГАИЗБРАННОЕ
+                    </h4>
+                    <button type='button' class='btn-close' data-bs-dismiss='modal'></button>
+                </div>
+                <div class='modal-body p-0' id='megaFavoritesContent' style='min-height: 400px;'>
+                    <div class='d-flex justify-content-center align-items-center h-100'>
+                        <div class='text-center py-5'>
+                            <div class='spinner-border text-warning mb-3' role='status' style='width: 3rem; height: 3rem;'>
+                                <span class='visually-hidden'>Загрузка мегаизбранного...</span>
+                            </div>
+                            <h5>🔄 Загружаем мегаизбранное...</h5>
+                        </div>
+                    </div>
+                </div>
+                <div class='modal-footer bg-light'>
+                    <button type='button' class='btn btn-outline-secondary' data-bs-dismiss='modal'>
+                        <i class='fas fa-times me-2'></i>❌ Закрыть
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-// Показать модальное окно для нового отзыва
-function showReviewModal(reviewId = null) {
-    document.getElementById('reviewModalTitle').textContent = reviewId ? 'Редактировать отзыв' : 'Добавить отзыв';
-    document.getElementById('reviewForm').reset();
+    <!-- Product Modal (оставляем как есть для просмотра товаров) -->
+    <div class='modal fade' id='productModal' tabindex='-1'>
+        <div class='modal-dialog modal-xl'>
+            <div class='modal-content'>
+                <div class='modal-header bg-primary text-white'>
+                    <h5 class='modal-title' id='productModalTitle'>Товар</h5>
+                    <button type='button' class='btn-close btn-close-white' data-bs-dismiss='modal'></button>
+                </div>
+                <div class='modal-body'>
+                    <div class='row'>
+                        <div class='col-md-6'>
+                            <div class='bg-light d-flex align-items-center justify-content-center rounded-3' style='height: 300px;'>
+                                <i class='fas fa-fish fa-4x text-muted'></i>
+                            </div>
+                        </div>
+                        <div class='col-md-6'>
+                            <h4 id='productModalName'>Название товара</h4>
+                            <p class='text-muted' id='productModalCategory'>Категория</p>
+                            <div class='mb-3' id='productModalRating'></div>
+                            <div class='mb-3'>
+                                <span class='h4 text-success' id='productModalPrice'>0 ₽</span>
+                            </div>
+                            <p id='productModalDescription'>Описание товара</p>
+                            <div class='d-grid gap-2'>
+                                <button class='btn btn-success btn-lg' onclick='megaAddToCartFromModal()'>
+                                    <i class='fas fa-cart-plus me-2'></i>🛒 В мегакорзину
+                                </button>
+                                <button class='btn btn-outline-warning' onclick='megaToggleFavoriteFromModal()' id='favoriteModalBtn'>
+                                    <i class='fas fa-heart me-2'></i>❤️ В мегаизбранное
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
-    if (reviewId) {
-        loadReviewData(reviewId);
-    } else {
-        document.getElementById('reviewId').value = '';
-    }
+                    <!-- Reviews Section (упрощенная версия) -->
+                    <div class='mt-4 p-4 bg-light rounded-3'>
+                        <div class='d-flex justify-content-between align-items-center mb-3'>
+                            <h5><i class='fas fa-star me-2 text-warning'></i>🌟 Мегаотзывы</h5>
+                            <button class='btn btn-outline-primary btn-sm' onclick='showMegaReviewForm()'>
+                                <i class='fas fa-plus me-1'></i>➕ Оставить мегаотзыв
+                            </button>
+                        </div>
 
-    new bootstrap.Modal(document.getElementById('reviewModal')).show();
-}
+                        <div id='reviewsList'></div>
 
-// Загрузка данных отзыва для редактирования
-async function loadReviewData(reviewId) {
-    try {
-        const formData = new FormData();
-        formData.append('action', 'get_review');
-        formData.append('id', reviewId);
+                        <div class='review-form bg-white p-3 rounded-3 mt-3' id='reviewForm' style='display: none;'>
+                            <h6 class='mb-3'>📝 Оставить мегаотзыв</h6>
+                            <form id='reviewSubmitForm'>
+                                <input type='hidden' id='reviewProductId' name='product_id'>
+                                <div class='row'>
+                                    <div class='col-md-6'>
+                                        <label class='form-label'>👤 Ваше имя *</label>
+                                        <input type='text' class='form-control' name='customer_name' required>
+                                    </div>
+                                    <div class='col-md-6'>
+                                        <label class='form-label'>📧 Email</label>
+                                        <input type='email' class='form-control' name='customer_email'>
+                                    </div>
+                                </div>
+                                <div class='mt-3'>
+                                    <label class='form-label'>⭐ Мегарейтинг *</label>
+                                    <select class='form-select' name='rating' required>
+                                        <option value=''>Выберите рейтинг</option>
+                                        <option value='5'>⭐⭐⭐⭐⭐ Мегаотлично!</option>
+                                        <option value='4'>⭐⭐⭐⭐ Хорошо</option>
+                                        <option value='3'>⭐⭐⭐ Нормально</option>
+                                        <option value='2'>⭐⭐ Плохо</option>
+                                        <option value='1'>⭐ Ужасно</option>
+                                    </select>
+                                </div>
+                                <div class='mt-3'>
+                                    <label class='form-label'>📝 Заголовок</label>
+                                    <input type='text' class='form-control' name='title' placeholder='Краткое впечатление'>
+                                </div>
+                                <div class='mt-3'>
+                                    <label class='form-label'>💬 Мегаотзыв *</label>
+                                    <textarea class='form-control' name='comment' rows='3' required placeholder='Поделитесь своим мнением о товаре'></textarea>
+                                </div>
+                                <div class='mt-3 d-flex gap-2'>
+                                    <button type='submit' class='btn btn-primary'>
+                                        <i class='fas fa-paper-plane me-1'></i>📤 Отправить
+                                    </button>
+                                    <button type='button' class='btn btn-secondary' onclick='hideMegaReviewForm()'>❌ Отмена</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
+    <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js'></script>
+    <script>
+        let currentProductId = null;
+
+        // 🛒 МЕГА ФУНКЦИИ КОРЗИНЫ
+        async function megaAddToCart(productId, quantity = 1) {
+            console.log('🛒 МЕГАКОРЗИНА: Добавление товара', productId, 'количество:', quantity);
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_add_to_cart');
+                formData.append('product_id', productId);
+                formData.append('quantity', quantity);
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+
+                const result = await response.json();
+                console.log('🛒 Результат:', result);
+
+                if (result.success) {
+                    megaUpdateCartBadge(result.cartCount);
+                    megaShowNotification(result.message, 'success');
+                    console.log('✅ Товар добавлен в мегакорзину!');
+                } else {
+                    megaShowNotification(result.message || '❌ Ошибка добавления в мегакорзину', 'error');
+                    console.error('❌ Ошибка добавления:', result.message);
+                }
+
+            } catch (error) {
+                console.error('💥 Мегакритическая ошибка:', error);
+                megaShowNotification('💥 Мегаошибка сети: ' + error.message, 'error');
+            }
+        }
+
+        async function megaUpdateCartModal() {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_get_cart_content');
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('megaCartContent').innerHTML = result.content;
+
+                    const checkoutBtn = document.getElementById('megaCheckoutBtn');
+                    if (result.total > 0) {
+                        checkoutBtn.style.display = 'inline-flex';
+                    } else {
+                        checkoutBtn.style.display = 'none';
+                    }
+                } else {
+                    throw new Error(result.message || 'Ошибка загрузки мегакорзины');
+                }
+
+            } catch (error) {
+                console.error('💥 Ошибка загрузки мегакорзины:', error);
+                document.getElementById('megaCartContent').innerHTML = `
+                    <div class='alert alert-danger m-4'>
+                        <i class='fas fa-exclamation-triangle me-2'></i>
+                        💥 Ошибка загрузки мегакорзины: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function megaUpdateQuantity(productId, quantity) {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_update_quantity');
+                formData.append('product_id', productId);
+                formData.append('quantity', quantity);
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    megaUpdateCartBadge(result.cartCount);
+                    megaUpdateCartModal();
+                    megaShowNotification('✅ Мегакорзина обновлена', 'success');
+                } else {
+                    megaShowNotification(result.message, 'error');
+                }
+
+            } catch (error) {
+                megaShowNotification('💥 Мегаошибка сети', 'error');
+            }
+        }
+
+        async function megaRemoveItem(productId) {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_remove_item');
+                formData.append('product_id', productId);
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    megaUpdateCartBadge(result.cartCount);
+                    megaUpdateCartModal();
+                    megaShowNotification(result.message, 'success');
+                } else {
+                    megaShowNotification(result.message, 'error');
+                }
+            } catch (error) {
+                megaShowNotification('💥 Мегаошибка сети', 'error');
+            }
+        }
+
+        // ❤️ МЕГА ФУНКЦИИ ИЗБРАННОГО
+        async function megaToggleFavorite(productId, button) {
+            const isActive = button.classList.contains('text-warning');
+            const action = isActive ? 'mega_remove_from_favorites' : 'mega_add_to_favorites';
+
+            try {
+                const formData = new FormData();
+                formData.append('action', action);
+                formData.append('product_id', productId);
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (isActive) {
+                        button.classList.remove('text-warning');
+                        button.classList.add('text-muted');
+                        button.title = 'Добавить в мегаизбранное';
+                    } else {
+                        button.classList.remove('text-muted');
+                        button.classList.add('text-warning');
+                        button.title = 'Удалить из мегаизбранного';
+                    }
+                    megaUpdateFavoritesBadge(result.favoritesCount);
+                    megaShowNotification(result.message, 'success');
+
+                    // Обновляем избранное если оно открыто
+                    if (document.getElementById('megaFavoritesModal').classList.contains('show')) {
+                        megaUpdateFavoritesModal();
+                    }
+                } else {
+                    megaShowNotification(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('💥 Мегаошибка избранного:', error);
+                megaShowNotification('💥 Мегаошибка сети', 'error');
+            }
+        }
+
+        async function megaShowFavorites() {
+            megaUpdateFavoritesModal();
+            const modal = new bootstrap.Modal(document.getElementById('megaFavoritesModal'));
+            modal.show();
+        }
+
+        async function megaUpdateFavoritesModal() {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_get_favorites_content');
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('megaFavoritesContent').innerHTML = result.content;
+                } else {
+                    throw new Error(result.message || 'Ошибка загрузки мегаизбранного');
+                }
+
+            } catch (error) {
+                console.error('💥 Ошибка загрузки мегаизбранного:', error);
+                document.getElementById('megaFavoritesContent').innerHTML = `
+                    <div class='alert alert-danger m-4'>
+                        <i class='fas fa-exclamation-triangle me-2'></i>
+                        💥 Ошибка загрузки мегаизбранного: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function megaAddToCartFromFavorites(productId) {
+            await megaAddToCart(productId);
+        }
+
+        async function megaRemoveFromFavorites(productId) {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'mega_remove_from_favorites');
+                formData.append('product_id', productId);
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    megaUpdateFavoritesBadge(result.favoritesCount);
+                    megaUpdateFavoritesModal();
+                    megaShowNotification(result.message, 'success');
+                } else {
+                    megaShowNotification(result.message, 'error');
+                }
+            } catch (error) {
+                megaShowNotification('💥 Мегаошибка сети', 'error');
+            }
+        }
+
+        // 👁️ ФУНКЦИИ ПРОСМОТРА ТОВАРОВ
+        async function showProductModal(productId) {
+            try {
+                const response = await fetch(`index.php?action=get_product&id=${productId}`);
+                const product = await response.json();
+
+                if (product.error) {
+                    megaShowNotification('❌ Товар не найден', 'error');
+                    return;
+                }
+
+                currentProductId = productId;
+
+                document.getElementById('productModalTitle').textContent = product.name || 'Товар';
+                document.getElementById('productModalName').textContent = product.name || 'Товар';
+                document.getElementById('productModalPrice').textContent = formatPrice(product.price || 0);
+                document.getElementById('productModalDescription').textContent = product.description || 'Описание отсутствует';
+                document.getElementById('reviewProductId').value = productId;
+
+                loadProductReviews(product.reviews || []);
+
+                const modal = new bootstrap.Modal(document.getElementById('productModal'));
+                modal.show();
+
+            } catch (error) {
+                console.error('💥 Ошибка загрузки товара:', error);
+                megaShowNotification('💥 Ошибка загрузки товара', 'error');
+            }
+        }
+
+        function loadProductReviews(reviews) {
+            const reviewsList = document.getElementById('reviewsList');
+
+            if (!reviews || reviews.length === 0) {
+                reviewsList.innerHTML = `
+                    <div class='text-center text-muted py-4'>
+                        <i class='fas fa-comment-dots fa-3x mb-3 d-block'></i>
+                        <h6>🤷 Мегаотзывов пока нет</h6>
+                        <p>Станьте первым, кто оставит мегаотзыв!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let reviewsHtml = '';
+            reviews.forEach(review => {
+                const stars = Array.from({length: 5}, (_, i) => 
+                    `<i class='fas fa-star ${i < (review.rating || 0) ? 'text-warning' : 'text-muted'}'></i>`
+                ).join('');
+
+                reviewsHtml += `
+                    <div class='review-item bg-white p-3 rounded-3 mb-3 border'>
+                        <div class='d-flex justify-content-between align-items-start mb-2'>
+                            <div>
+                                <h6 class='mb-1 fw-bold'>👤 ${escapeHtml(review.customer_name || 'Мегааноним')}</h6>
+                                <div class='stars mb-1'>${stars}</div>
+                            </div>
+                            <small class='text-muted'>📅 ${formatDate(review.created_at)}</small>
+                        </div>
+                        ${review.title ? `<h6 class='mb-2 text-primary'>📝 ${escapeHtml(review.title)}</h6>` : ''}
+                        <p class='mb-0'>💬 ${escapeHtml(review.comment || '')}</p>
+                    </div>
+                `;
+            });
+
+            reviewsList.innerHTML = reviewsHtml;
+        }
+
+        function megaAddToCartFromModal() {
+            if (currentProductId) {
+                megaAddToCart(currentProductId);
+            }
+        }
+
+        function megaToggleFavoriteFromModal() {
+            if (currentProductId) {
+                const button = document.getElementById('favoriteModalBtn');
+                megaToggleFavorite(currentProductId, button);
+            }
+        }
+
+        // 🌟 МЕГА ОТЗЫВЫ
+        function showMegaReviewForm() {
+            document.getElementById('reviewForm').style.display = 'block';
+        }
+
+        function hideMegaReviewForm() {
+            document.getElementById('reviewForm').style.display = 'none';
+            document.getElementById('reviewSubmitForm').reset();
+        }
+
+        document.getElementById('reviewSubmitForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            try {
+                const formData = new FormData(this);
+                formData.append('action', 'mega_submit_review');
+
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    megaShowNotification(result.message, 'success');
+                    hideMegaReviewForm();
+                } else {
+                    megaShowNotification(result.message, 'error');
+                }
+            } catch (error) {
+                megaShowNotification('💥 Ошибка отправки мегаотзыва', 'error');
+            }
         });
 
-        const result = await response.json();
-
-        if (result.success) {
-            const review = result.review;
-            document.getElementById('reviewId').value = review.id || '';
-            document.getElementById('productId').value = review.product_id || '';
-            document.getElementById('rating').value = review.rating || '';
-            document.getElementById('customerName').value = review.customer_name || '';
-            document.getElementById('customerEmail').value = review.customer_email || '';
-            document.getElementById('title').value = review.title || '';
-            document.getElementById('comment').value = review.comment || '';
-            document.getElementById('status').value = review.status || 'pending';
-        } else {
-            showNotification('Ошибка загрузки отзыва', 'error');
+        // 🔄 ОБНОВЛЕНИЕ БЭЙДЖЕЙ
+        function megaUpdateCartBadge(count) {
+            const badge = document.getElementById('megaCartCount');
+            if (badge) {
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
+            }
         }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка сети', 'error');
-    }
-}
 
-// Редактирование отзыва
-function editReview(reviewId) {
-    showReviewModal(reviewId);
-}
+        function megaUpdateFavoritesBadge(count) {
+            const badge = document.getElementById('megaFavoritesCount');
+            if (badge) {
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
+            }
+        }
 
-// Сохранение отзыва
-document.getElementById('reviewForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
+        // 🔔 МЕГА УВЕДОМЛЕНИЯ
+        function megaShowNotification(message, type = 'success') {
+            const toastContainer = document.querySelector('.toast-container');
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+            const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
+            const emoji = type === 'success' ? '✅' : '❌';
 
-    try {
-        const formData = new FormData(this);
-        formData.append('action', 'save_review');
+            const notification = document.createElement('div');
+            notification.className = `alert ${alertClass} alert-dismissible fade show shadow-lg`;
+            notification.style.cssText = 'min-width: 350px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); border: none; font-weight: 500;';
+            notification.innerHTML = `
+                <i class='${icon} me-2'></i>${emoji} ${message}
+                <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+            `;
 
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
+            toastContainer.appendChild(notification);
+
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 6000);
+        }
+
+        // 🛠️ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+        function formatPrice(price) {
+            const numPrice = parseFloat(price) || 0;
+            return new Intl.NumberFormat('ru-RU', {
+                style: 'currency',
+                currency: 'RUB',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(numPrice);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('ru-RU', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 📱 СОБЫТИЯ И ИНИЦИАЛИЗАЦИЯ
+        document.getElementById('megaCartModal').addEventListener('show.bs.modal', megaUpdateCartModal);
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 МЕГА АкваСбор загружен!');
+            console.log('🛒 Мегасчетчик корзины:', <?= $cartCount ?>);
+            console.log('❤️ Мегасчетчик избранного:', <?= $favoritesCount ?>);
+
+            // Приветственное мегауведомление
+            setTimeout(() => {
+                megaShowNotification('🎉 Добро пожаловать в МЕГАМАГАЗИН АкваСбор!', 'success');
+            }, 1000);
         });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showNotification(result.message, 'success');
-            bootstrap.Modal.getInstance(document.getElementById('reviewModal')).hide();
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showNotification(result.message, 'error');
-        }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка сети', 'error');
-    }
-});
-
-// Обновление статуса отзыва
-async function updateStatus(reviewId, status) {
-    if (!confirm('Изменить статус отзыва?')) return;
-
-    try {
-        const formData = new FormData();
-        formData.append('action', 'update_review_status');
-        formData.append('id', reviewId);
-        formData.append('status', status);
-
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showNotification(result.message, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showNotification(result.message, 'error');
-        }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка сети', 'error');
-    }
-}
-
-// Удаление отзыва
-async function deleteReview(reviewId) {
-    if (!confirm('Вы уверены, что хотите удалить этот отзыв? Это действие нельзя отменить.')) return;
-
-    try {
-        const formData = new FormData();
-        formData.append('action', 'delete_review');
-        formData.append('id', reviewId);
-
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showNotification(result.message, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showNotification(result.message, 'error');
-        }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка сети', 'error');
-    }
-}
-
-// Фильтрация отзывов
-function filterReviews() {
-    const statusFilter = document.getElementById('statusFilter').value;
-    const ratingFilter = document.getElementById('ratingFilter').value;
-    const searchQuery = document.getElementById('searchInput').value.toLowerCase();
-
-    const rows = document.querySelectorAll('.review-row');
-
-    rows.forEach(row => {
-        const status = row.dataset.status;
-        const rating = row.dataset.rating;
-        const searchText = row.dataset.search.toLowerCase();
-
-        let show = true;
-
-        if (statusFilter && status !== statusFilter) show = false;
-        if (ratingFilter && rating !== ratingFilter) show = false;
-        if (searchQuery && !searchText.includes(searchQuery)) show = false;
-
-        row.style.display = show ? '' : 'none';
-    });
-}
-
-// Уведомления
-function showNotification(message, type = 'success') {
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
-    const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
-
-    const notification = document.createElement('div');
-    notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);';
-    notification.innerHTML = `
-        <i class='${icon} me-2'></i>${message}
-        <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
-    `;
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
-}
-</script>
+    </script>
+</body>
+</html>
